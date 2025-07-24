@@ -2,8 +2,8 @@
 
 module ThreadSafeDicts
 
-import Base.getindex, Base.setindex!, Base.get!, Base.get, Base.empty!, Base.pop!
-import Base.haskey, Base.delete!, Base.print, Base.iterate, Base.length
+import Base: getindex, setindex!, get!, get, empty!, pop!
+import Base: haskey, delete!, print, iterate, length
 export ThreadSafeDict
 
 """
@@ -12,6 +12,18 @@ export ThreadSafeDict
 Return a `ThreadSafeDict`, which wraps a `Dict` along with a lock.
 Functions on a `ThreadSafeDict` generally acquire this lock and pass the underlying `Dict` to the call, and release
 the lock once the call returns.
+
+!!! warn
+    Compound operations like `d["key"] += value` involve a `getindex` followed
+    by a `setindex!`, so the lock will be released and re-acquired. This can lead to the value being modified by another thread
+    between the two operations.
+    To avoid this, you can use
+    ```julia
+    lock(d) do d
+        d["key"] += value
+    end
+    ```
+which will hold the lock for the entire duration of the operation.
 
 A `ThreadSafeDict` does not directly support `@lock`, but `parent(t::ThreadSafeDict)` returns a `Lockable`
 object that supports `@lock`.
@@ -31,14 +43,15 @@ end
 Base.parent(dic::ThreadSafeDict) = dic.d
 
 function getindex(dic::ThreadSafeDict, k)
-    lockable = parent(dic)
-    @lock lockable getindex(lockable[], k)
+    lock(dic) do d
+        getindex(d, k)
+    end
 end
 
-
 function setindex!(dic::ThreadSafeDict, k, v)
-    lockable = parent(dic)
-    @lock lockable setindex!(lockable[], k, v)
+    lock(dic) do d
+        setindex!(d, k, v)
+    end
 end
 
 function haskey(dic::ThreadSafeDict, k)

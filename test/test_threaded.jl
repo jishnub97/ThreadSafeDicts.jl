@@ -48,16 +48,20 @@ function testThreadSafeDicts()
     dict["sum"] = 0
     Threads.@threads for i in 1:1000
         dict[string(i)] = i
-        dict["sum"] += i
+        lock(dict) do d
+            d["sum"] += i
+        end
     end
-    res = merge(Dict(string(i) => i for i in 1:1000), Dict("sum" => 500500))
+    res = merge(Dict(string(i)=>i for i in 1:1000), Dict("sum" => sum(1:1000)))
     @test dict == res
     empty!(dict)
     dict["sum"] = 0
     @sync for i in 1:1000
         Threads.@spawn begin
             dict[string(i)] = i
-            dict["sum"] += i
+            lock(dict) do d
+                d["sum"] += i
+            end
         end
     end
     @test dict == res
