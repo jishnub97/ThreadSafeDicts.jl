@@ -45,15 +45,27 @@ function testThreadSafeDicts()
     @test_throws KeyError dict["another"]
     
     empty!(dict)
-
+    dict["sum"] = 0
     Threads.@threads for i in 1:1000
         dict[string(i)] = i
+        dict["sum"] += i
     end
+    res = merge(Dict(string(i) => i for i in 1:1000), Dict("sum" => 500500))
+    @test dict == res
+    empty!(dict)
+    dict["sum"] = 0
+    @sync for i in 1:1000
+        Threads.@spawn begin
+            dict[string(i)] = i
+            dict["sum"] += i
+        end
+    end
+    @test dict == res
 
-    @test ((x, y) = iterate(dict)) != nothing
-    @test iterate(dict, y) != nothing
+    @test ((x, y) = iterate(dict)) !== nothing
+    @test iterate(dict, y) !== nothing
 
-    @test length(dict.d) == 1000
+    @test length(dict) == 1001
     empty!(dict)
     Threads.@threads for i in 1:1000
         sleep(rand() / 100)

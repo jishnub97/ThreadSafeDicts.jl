@@ -9,15 +9,18 @@ export ThreadSafeDict
 """
     ThreadSafeDict(pairs::Vector{Pair{K,V}})
 
-Struct and constructor for ThreadSafeDict. There is one lock per Dict struct. All functions lock this lock, pass
-arguments to the d member Dict, unlock the lock, and then return what is returned by the Dict.
+Return a `ThreadSafeDict`, which wraps a `Dict` along with a lock.
+Functions on a `ThreadSafeDict` generally acquire this lock and pass the underlying `Dict` to the call, and release
+the lock once the call returns.
+
+A `ThreadSafeDict` does not directly support `@lock`, but `parent(t::ThreadSafeDict)` returns a `Lockable`
+object that supports `@lock`.
 """
 struct ThreadSafeDict{K, V} <: AbstractDict{K, V}
-    dlock::ReentrantLock
-    d::Dict{K, V}
-    ThreadSafeDict{K, V}() where V where K = new(ReentrantLock(), Dict{K, V}())
-    ThreadSafeDict{K, V}(d::Dict{K, V}) where V where K = new(ReentrantLock(), d)
-    ThreadSafeDict{K, V}(itr) where V where K = new(ReentrantLock(), Dict{K, V}(itr))
+    d :: Base.Lockable{Dict{K, V}, Threads.SpinLock}
+    ThreadSafeDict{K, V}(d::Dict{K,V}) where {K,V} = new{K,V}(Base.Lockable(d, Threads.SpinLock()))
+    ThreadSafeDict{K, V}(itr) where {K,V} = ThreadSafeDict{K, V}(Dict{K, V}(itr))
+    ThreadSafeDict{K, V}() where {K,V} = ThreadSafeDict{K, V}(Dict{K, V}())
 end
 ThreadSafeDict(d::Dict{K, V}) where V where K = ThreadSafeDict{K, V}(d)
 ThreadSafeDict() = ThreadSafeDict{Any,Any}()
@@ -25,65 +28,106 @@ function ThreadSafeDict(itr)
     d = Dict(itr)
     ThreadSafeDict(d)
 end
+Base.parent(dic::ThreadSafeDict) = dic.d
 
 function getindex(dic::ThreadSafeDict, k)
-    @lock dic.dlock getindex(dic.d, k)
+    lockable = parent(dic)
+    @lock lockable getindex(lockable[], k)
 end
 
+
 function setindex!(dic::ThreadSafeDict, k, v)
-    @lock dic.dlock setindex!(dic.d, k, v)
+    lockable = parent(dic)
+    @lock lockable setindex!(lockable[], k, v)
 end
 
 function haskey(dic::ThreadSafeDict, k)
-    @lock dic.dlock haskey(dic.d, k)
+    lock(dic) do d
+        haskey(d, k)
+    end
 end
 
 function get(dic::ThreadSafeDict, k, v)
-    @lock dic.dlock get(dic.d, k, v)
+    lock(dic) do d
+        get(d, k, v)
+    end
 end
 
 function get(f::Union{Function, Type}, dic::ThreadSafeDict, k)
-    @lock dic.dlock get(f, dic.d, k)
+    lock(dic) do d
+        get(f, d, k)
+    end
 end
 
 function get!(dic::ThreadSafeDict, k, v)
-    @lock dic.dlock get!(dic.d, k, v)
+    lock(dic) do d
+        get!(d, k, v)
+    end
 end
 
 function get!(f::Union{Function, Type}, dic::ThreadSafeDict, k)
-    @lock dic.dlock get!(f, dic.d, k)
+    lock(dic) do d
+        get!(f, d, k)
+    end
 end
 
 function pop!(dic::ThreadSafeDict)
-    @lock dic.dlock pop!(dic.d)
+    lock(dic) do d
+        pop!(d)
+    end
 end
 
 function empty!(dic::ThreadSafeDict)
-    @lock dic.dlock empty!(dic.d)
+    lock(dic) do d
+        empty!(d)
+    end
 end
 
 function delete!(dic::ThreadSafeDict, k)
-    @lock dic.dlock delete!(dic.d, k)
+    lock(dic) do d
+        delete!(d, k)
+    end
 end
 
 function length(dic::ThreadSafeDict)
-    @lock dic.dlock length(dic.d)
+    lock(dic) do d
+        length(d)
+    end
 end
 
 function iterate(dic::ThreadSafeDict)
-    @lock dic.dlock iterate(dic.d)
+    lock(dic) do d
+        iterate(d)
+    end
 end
 
 function iterate(dic::ThreadSafeDict, i)
-    @lock dic.dlock iterate(dic.d, i)
+    lock(dic) do d
+        iterate(d, i)
+    end
 end
 
 function show(io::IO, dic::ThreadSafeDict)
-    @lock dic.dlock show(io, dic.d)
+    lock(dic) do d
+        show(io, d)
+    end
 end
 
 function show(io::IO, m::MIME"text/plain", dic::ThreadSafeDict)
-    @lock dic.dlock show(io, m, dic.d)
+    lock(dic) do d
+        show(io, m, d)
+    end
+end
+
+"""
+    lock(f::Function, dic::ThreadSafeDict)
+
+Acquire the lock of the ThreadSafeDict and call the function `f` with the underlying `Dict` as the only argument.
+When this function returns, the lock is released.
+"""
+function Base.lock(f::Function, dic::ThreadSafeDict)
+    lockable = parent(dic)
+    @lock lockable f(lockable[])
 end
 
 end # module
