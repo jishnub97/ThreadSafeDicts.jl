@@ -133,12 +133,12 @@ function show(io::IO, m::MIME"text/plain", dic::ThreadSafeDict)
 end
 
 """
-    lock(f::Function, dic::ThreadSafeDict)
+    lock(f, dic::ThreadSafeDict)
 
 Acquire the lock of the ThreadSafeDict and call the function `f` with the underlying `Dict` as the only argument.
 When this function returns, the lock is released.
 """
-function Base.lock(f::Function, dic::ThreadSafeDict)
+function Base.lock(f, dic::ThreadSafeDict)
     lockable = parent(dic)
     @lock lockable f(lockable[])
 end
